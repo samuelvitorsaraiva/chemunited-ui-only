@@ -10,12 +10,13 @@ from qfluentwidgets import (
 )
 from qframelesswindow import FramelessWindow, StandardTitleBar
 from chemunited.shared.icon import OrchestratorIcon
-from chemunited.shared.resources import resources_rc
 from chemunited.shared.widgets.loggings_widget import FrameLoggings
+from chemunited.shared.enums import WindowCategory
 
 
 class MainWindowBase(FramelessWindow):
     TITLE: str = "Chemunited Orchestration Software"
+    WINDOW_TYPE: WindowCategory = WindowCategory.SETUP
 
     def __init__(self):
         super().__init__()
@@ -25,6 +26,10 @@ class MainWindowBase(FramelessWindow):
         self.navigationInterface = NavigationInterface(self, showMenuButton=True)
         self.stackWidget = QStackedWidget(self)
 
+        """ Error handle Qtimer """
+
+        # Timer to drain bus in the GUI thread safely
+        self.drain_bus_timer = QTimer(self)
 
     def buildUi(self):
         """Build the UI"""
