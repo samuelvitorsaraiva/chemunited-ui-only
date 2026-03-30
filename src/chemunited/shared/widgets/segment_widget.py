@@ -1,6 +1,7 @@
-from qfluentwidgets import SegmentedWidget
-from PyQt5.QtWidgets import QWidget, QStackedWidget, QVBoxLayout
 from typing import Any
+
+from PyQt5.QtWidgets import QStackedWidget, QVBoxLayout, QWidget
+from qfluentwidgets import SegmentedWidget
 
 
 class SegmentWindow(QWidget):

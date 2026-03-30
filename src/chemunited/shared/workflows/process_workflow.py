@@ -1,8 +1,10 @@
-from chemunited.shared.enums.protocols_enum import ProtocolBlock
-from networkx import DiGraph
 from dataclasses import dataclass, field
-from typing import Any, Optional
 from pathlib import Path
+from typing import Any, Optional
+
+from networkx import DiGraph
+
+from chemunited.shared.enums.protocols_enum import ProtocolBlock
 
 
 @dataclass
@@ -10,7 +12,7 @@ class ScriptMetadata:
     name: str
     process: str
     file: Optional[str] = None
-    pos: tuple[int, int] = field(default=(0, 0))
+    pos: tuple[float, float] = field(default=(0, 0))
     block_tag: ProtocolBlock = ProtocolBlock.SCRIPT
     ports_numbers: int = 1
     file_path: Optional[Path] = None
@@ -22,14 +24,14 @@ class ProcessWorkflow(DiGraph):
     def __init__(self, process: str = ""):
         super().__init__()
         self._process = process
-        #self.parameters: BaseModeParameters = BaseModeParameters()
+        # self.parameters: BaseModeParameters = BaseModeParameters()
         self._scripts_metadata: dict[str, ScriptMetadata] = {}
 
     def add_block(
         self,
         name: str,
         file: Optional[str] = None,
-        pos: tuple[int, int] = (0, 0),
+        pos: tuple[float, float] = (0, 0),
         block_tag: ProtocolBlock = ProtocolBlock.SCRIPT,
         ports_numbers: int = 1,
         **kwargs,
@@ -75,18 +77,12 @@ class ProcessWorkflow(DiGraph):
         return super().clear()
 
     def get_file(self, node: str) -> str:
-        return (  # type:ignore[return-value]
-            self._scripts_metadata[node].file  # type:ignore[return-value]
-            if self._scripts_metadata[node].file  # type:ignore[return-value]
-            else ""  # type:ignore[return-value]
-        )  # type:ignore[return-value]
+        file = self._scripts_metadata[node].file
+        return file if file is not None else ""
 
     def get_file_path(self, node: str) -> Path:
-        return (  # type:ignore[return-value]
-            self._scripts_metadata[node].file_path  # type:ignore[return-value]
-            if self._scripts_metadata[node].file_path  # type:ignore[return-value]
-            else Path("")  # type:ignore[return-value]
-        )  # type:ignore[return-value]
+        file_path = self._scripts_metadata[node].file_path
+        return file_path if file_path is not None else Path("")
 
     def get_call_function(self, node: str):
         return self._scripts_metadata[node].call_function

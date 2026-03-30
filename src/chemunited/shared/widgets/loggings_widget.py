@@ -168,7 +168,7 @@ class FrameLoggings(QFrame):
         Convert Loguru level to style keys.
         """
         level = (
-            str(r.get("level").name).lower()  # type:ignore[union-attr]
+            str(r.get("level").name).lower()  # type: ignore[union-attr]
             if r.get("level")
             else "reporting"
         )
@@ -263,9 +263,7 @@ class FrameLoggings(QFrame):
         thread_info = (
             f"{getattr(thread_obj, 'id', '')} {getattr(thread_obj, 'name', '')}".strip()
         )
-        process_info = (
-            f"{getattr(process_obj, 'id', '')} {getattr(process_obj, 'name', '')}".strip()
-        )
+        process_info = f"{getattr(process_obj, 'id', '')} {getattr(process_obj, 'name', '')}".strip()
 
         thread_info = escape(thread_info)
         process_info = escape(process_info)
@@ -283,7 +281,7 @@ class FrameLoggings(QFrame):
 
         if exc is not None:
             exc_type = escape(
-                getattr(exc, "type", None).__name__  # type:ignore[union-attr]
+                getattr(exc, "type", None).__name__  # type: ignore[union-attr]
                 if getattr(exc, "type", None)
                 else "Exception"
             )

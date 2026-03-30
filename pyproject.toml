@@ -7,7 +7,7 @@ name = "chemunited"
 version = "0.0.1"
 description = "Visual interface for designing and executing chemistry automation workflows on top of FlowChem."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 license =  { text = "MIT" }
 keywords = ["control", "automation", "process"]
 authors = [
@@ -26,6 +26,14 @@ dependencies = [
     "PyQt-Fluent-Widgets",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "black>=25.1.0",
+    "mypy>=1.19.1",
+    "pre-commit>=4.0.0",
+    "ruff>=0.15.7",
+]
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 
@@ -33,3 +41,45 @@ package-dir = {"" = "src"}
 where = ["src"]
 include = ["chemunited*"]
 namespaces = true
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+extend-exclude = '''
+(
+    ^/.venv
+  | ^/build
+  | ^/src/chemunited/shared/resources
+)
+'''
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+extend-exclude = [
+    ".venv",
+    "build",
+    "src/chemunited/shared/resources",
+]
+
+[tool.ruff.lint]
+extend-select = ["I"]
+
+[tool.mypy]
+python_version = "3.13"
+files = ["src/chemunited"]
+exclude = '(^\.venv/|^build/|^src/chemunited/shared/resources/)'
+pretty = true
+show_error_codes = true
+warn_redundant_casts = true
+warn_unused_ignores = false
+
+[[tool.mypy.overrides]]
+module = [
+    "qfluentwidgets",
+    "qframelesswindow",
+    "networkx",
+    "networkx.*",
+    "chemunited.ui.*",
+]
+ignore_missing_imports = true

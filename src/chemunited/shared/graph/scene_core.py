@@ -1,13 +1,12 @@
+from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import QGraphicsScene
-from PyQt5.QtGui import QPen, QColor
-from PyQt5.QtCore import Qt, QLineF
 from qfluentwidgets import isDarkTheme
 
 
 class SceneCore(QGraphicsScene):
     def __init__(self, parent=None):
         super().__init__(parent)
-    
+
     def sync_theme(self):
         if isDarkTheme():
             self.setBackgroundBrush(QColor(0, 0, 0, 0))

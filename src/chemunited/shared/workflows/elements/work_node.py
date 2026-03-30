@@ -1,21 +1,21 @@
-from chemunited.shared.icon import OrchestratorIcon
-from chemunited.shared.enums.protocols_enum import ProtocolBlock
-from .style import WorkflowColorStyle
-
-
-from qfluentwidgets import IndeterminateProgressBar, isDarkTheme
+from PyQt5.QtCore import QRectF, Qt
+from PyQt5.QtGui import QColor, QFont, QFontMetrics, QPainterPath, QPen
+from PyQt5.QtSvg import QSvgRenderer
 from PyQt5.QtWidgets import (
     QGraphicsDropShadowEffect,
-    QGraphicsItemGroup,
     QGraphicsItem,
+    QGraphicsItemGroup,
     QGraphicsPathItem,
     QGraphicsProxyWidget,
     QGraphicsTextItem,
 )
-from PyQt5.QtCore import QRectF, Qt
-from PyQt5.QtGui import QColor, QFont, QFontMetrics, QPainterPath, QPen
-from PyQt5.QtSvg import QSvgRenderer
+from qfluentwidgets import IndeterminateProgressBar, isDarkTheme
+
+from chemunited.shared.enums.protocols_enum import ProtocolBlock
+from chemunited.shared.icon import OrchestratorIcon
+
 from .access_point import WorkflowAccessPoints
+from .style import WorkflowColorStyle
 
 
 class WorkflowSvgIconItem(QGraphicsItem):
@@ -191,7 +191,9 @@ class WorkflowNode(QGraphicsItemGroup):
         self.subtitle_item.setPlainText(self.subtitle)
 
         if self.is_terminal:
-            self.title_item.setPlainText(self._elide_text(self.title, title_font, width - 18))
+            self.title_item.setPlainText(
+                self._elide_text(self.title, title_font, width - 18)
+            )
             title_rect = self.title_item.boundingRect()
             if self.icon_item:
                 self.icon_item.setPos(

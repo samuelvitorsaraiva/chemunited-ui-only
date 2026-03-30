@@ -1,16 +1,17 @@
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QPainter
 from PyQt5.QtWidgets import (
     QGraphicsView,
 )
-from PyQt5.QtGui import QPixmap, QCursor, QPainter
-from PyQt5.QtCore import Qt, QSize, pyqtSignal
-from .scene_core import SceneCore
-from typing import TYPE_CHECKING, Any
+
 from chemunited.shared.enums import SetupStepMode
+
+from .scene_core import SceneCore
 
 
 class GraphCore(QGraphicsView):
-    MODE: SetupStepMode = SetupStepMode.DESIGN    
-    
+    MODE: SetupStepMode = SetupStepMode.DESIGN
+
     def __init__(self, scene: SceneCore | None = None, parent=None):
         super().__init__(parent)
         if scene is None:
@@ -44,14 +45,16 @@ class GraphCore(QGraphicsView):
     def keyPressEvent(self, event):
         # Handle key downs
         super().keyPressEvent(event)
-        
+
     def keyReleaseEvent(self, event):
         # Handle key ups
         super().keyReleaseEvent(event)
 
     # === Rendering ===
-    def drawBackground(self, painter: QPainter, rect):
+    def drawBackground(self, painter: QPainter | None, rect) -> None:
         # Customize the background (e.g. to draw a grid lattice layout)
+        if painter is None:
+            return
         super().drawBackground(painter, rect)
 
     # === Utility ===
@@ -62,9 +65,9 @@ class GraphCore(QGraphicsView):
         if self.scene():
             # Get the bounding box of all items
             items_rect = self.scene().itemsBoundingRect()
-            
+
             # Optionally update the scene dimensions to match
             self.scene().setSceneRect(items_rect)
-            
+
             # Fit the view to this rect, maintaining aspect ratio
             self.fitInView(items_rect, Qt.KeepAspectRatio)

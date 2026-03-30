@@ -1,6 +1,7 @@
-from qfluentwidgets import isDarkTheme, FluentIconBase, Theme
-from PyQt5.QtCore import QFile
 from enum import Enum
+
+from PyQt5.QtCore import QFile
+from qfluentwidgets import FluentIconBase, Theme, isDarkTheme
 
 
 def getIconColor():  # Assuming you have this function defined elsewhere

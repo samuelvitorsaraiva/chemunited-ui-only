@@ -1,10 +1,9 @@
-from enum import StrEnum
+from enum import Enum
 
 
-class ProtocolBlock(StrEnum):
+class ProtocolBlock(str, Enum):
     SCRIPT = "script"
     START = "start"
     END = "end"
     LOOP = "loop"
     IF = "if"
-

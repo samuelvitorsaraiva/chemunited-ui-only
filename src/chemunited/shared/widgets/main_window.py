@@ -1,17 +1,18 @@
-from PyQt5.QtWidgets import QStackedWidget, QHBoxLayout, QApplication
+from PyQt5.QtCore import QFile, Qt, QTextStream, QTimer
 from PyQt5.QtGui import QIcon
-from PyQt5.QtCore import Qt, QFile, QTextStream, QTimer
+from PyQt5.QtWidgets import QApplication, QHBoxLayout, QStackedWidget
 from qfluentwidgets import (
+    FluentIcon,
     NavigationInterface,
     NavigationItemPosition,
     isDarkTheme,
     qrouter,
-    FluentIcon,
 )
 from qframelesswindow import FramelessWindow, StandardTitleBar
+
+from chemunited.shared.enums import WindowCategory
 from chemunited.shared.icon import OrchestratorIcon
 from chemunited.shared.widgets.loggings_widget import FrameLoggings
-from chemunited.shared.enums import WindowCategory
 
 
 class MainWindowBase(FramelessWindow):
@@ -136,9 +137,9 @@ class MainWindowBase(FramelessWindow):
 
 if __name__ == "__main__":
     import sys
+
     app = QApplication(sys.argv)
     window = MainWindowBase()
     window.buildUi()
     window.show()
     sys.exit(app.exec_())
-

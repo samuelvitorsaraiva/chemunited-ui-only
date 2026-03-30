@@ -1,14 +1,18 @@
+import math
+from collections.abc import Sequence
+from enum import Enum
+from typing import TypedDict, cast
+
+from PyQt5.QtCore import QPointF, Qt
+from PyQt5.QtGui import QBrush, QColor, QFont, QPainterPath, QPen
 from PyQt5.QtWidgets import (
     QGraphicsEllipseItem,
     QGraphicsItem,
     QGraphicsPathItem,
     QGraphicsTextItem,
 )
-from PyQt5.QtCore import QPointF, Qt
-from PyQt5.QtGui import QBrush, QColor, QFont, QPainterPath, QPen
+
 from .access_point import WorkflowAccessPoints
-from enum import Enum
-import math
 
 
 class CurveAttachedPosition(Enum):
@@ -17,6 +21,12 @@ class CurveAttachedPosition(Enum):
     TOP = 3
     BOTTOM = 4
     VERTICAL = 5
+
+
+class ConnectionConfig(TypedDict):
+    start: CurveAttachedPosition
+    end: CurveAttachedPosition
+    arrow: bool
 
 
 class WorkflowConnection(QGraphicsPathItem):
@@ -39,7 +49,7 @@ class WorkflowConnection(QGraphicsPathItem):
         self.start_item = start_item
         self.end_item = end_item
         self.edge_data = dict(edge_data or {})
-        self.config = {
+        self.config: ConnectionConfig = {
             "start": self._curve_position(start_item.role),
             "end": CurveAttachedPosition.LEFT,
             "arrow": True,
@@ -60,9 +70,9 @@ class WorkflowConnection(QGraphicsPathItem):
         self.label_item = QGraphicsTextItem(self)
         label_font = QFont("Segoe UI", 8)
         self.label_item.setFont(label_font)
-        self.label_item.setAcceptedMouseButtons(Qt.NoButton)  # type: ignore[attr-defined]
+        self.label_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
         self.label_item.setDefaultTextColor(self._semantic_color())
-        self.setFlag(QGraphicsItem.ItemIsSelectable, True)  # type: ignore[attr-defined]
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
         self._apply_style()
         self.setZValue(-0.5)
         self._inflection_handles = [
@@ -87,9 +97,11 @@ class WorkflowConnection(QGraphicsPathItem):
         pen.setColor(color)
         pen.setWidth(self._selected_width if selected else self._default_width)
         pen.setStyle(
-            Qt.DashLine if self.edge_data.get("loopback") is True else Qt.SolidLine
-        )  # type: ignore[attr-defined]
-        pen.setCapStyle(Qt.RoundCap)  # type: ignore[attr-defined]
+            Qt.PenStyle.DashLine
+            if self.edge_data.get("loopback") is True
+            else Qt.PenStyle.SolidLine
+        )
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         self.setPen(pen)
         self.label_item.setDefaultTextColor(color)
 
@@ -127,7 +139,7 @@ class WorkflowConnection(QGraphicsPathItem):
 
     def _coerce_inflection_points(
         self,
-        inflection_points: list[tuple[float, float] | QPointF] | None,
+        inflection_points: Sequence[tuple[float, float] | QPointF] | None,
         bend_point: tuple[float, float] | QPointF | None,
     ) -> list[QPointF]:
         if inflection_points:
@@ -168,7 +180,9 @@ class WorkflowConnection(QGraphicsPathItem):
         )
 
     @classmethod
-    def _is_collinear(cls, point_a: QPointF, point_b: QPointF, point_c: QPointF) -> bool:
+    def _is_collinear(
+        cls, point_a: QPointF, point_b: QPointF, point_c: QPointF
+    ) -> bool:
         same_x = cls._is_close(point_a.x(), point_b.x()) and cls._is_close(
             point_b.x(), point_c.x()
         )
@@ -234,7 +248,9 @@ class WorkflowConnection(QGraphicsPathItem):
     def _mid_x(point_a: QPointF, point_b: QPointF) -> float:
         return (point_a.x() + point_b.x()) / 2
 
-    def _tail_waypoints(self, start_point: QPointF, end_anchor: QPointF) -> list[QPointF]:
+    def _tail_waypoints(
+        self, start_point: QPointF, end_anchor: QPointF
+    ) -> list[QPointF]:
         trunk_x = self._mid_x(start_point, end_anchor)
         return [
             QPointF(start_point),
@@ -267,7 +283,10 @@ class WorkflowConnection(QGraphicsPathItem):
         points = [QPointF(start_anchor)]
         current = QPointF(start_anchor)
 
-        if self.config["start"] in {CurveAttachedPosition.TOP, CurveAttachedPosition.BOTTOM}:
+        if self.config["start"] in {
+            CurveAttachedPosition.TOP,
+            CurveAttachedPosition.BOTTOM,
+        }:
             current = self._start_lead_point(start_anchor)
             points.append(current)
 
@@ -409,7 +428,9 @@ class WorkflowConnection(QGraphicsPathItem):
     def _update_path_from_points(self):
         start_anchor = self._anchor_point(self.start_item, self.config["start"])
         end_anchor = self._anchor_point(self.end_item, self.config["end"])
-        self._route_waypoints = self._route_waypoints_from_anchors(start_anchor, end_anchor)
+        self._route_waypoints = self._route_waypoints_from_anchors(
+            start_anchor, end_anchor
+        )
         curve_path = self._rounded_path_from_waypoints(self._route_waypoints)
         self._curve_path = curve_path
         path = QPainterPath(curve_path)
@@ -462,7 +483,7 @@ class WorkflowConnection(QGraphicsPathItem):
 
     def set_inflection_points(
         self,
-        points: list[tuple[float, float] | QPointF] | None,
+        points: Sequence[tuple[float, float] | QPointF] | None,
         persist: bool = True,
     ):
         self.inflection_points = self._coerce_inflection_points(
@@ -470,13 +491,12 @@ class WorkflowConnection(QGraphicsPathItem):
             bend_point=None,
         )
         self.updateConnection()
-        if (
-            persist
-            and self.scene()
-            and self.scene().views()
-            and hasattr(self.scene().views()[0], "sync_connection_inflection_points")
-        ):
-            self.scene().views()[0].sync_connection_inflection_points(self)
+        scene = self.scene()
+        if not persist or scene is None:
+            return
+        views = scene.views()
+        if views and hasattr(views[0], "sync_connection_inflection_points"):
+            views[0].sync_connection_inflection_points(self)
 
     def set_inflection_point(
         self,
@@ -525,7 +545,7 @@ class WorkflowConnection(QGraphicsPathItem):
         self._update_handle_visibility()
 
     def itemChange(self, change, value):
-        if change == QGraphicsItem.ItemSelectedHasChanged:  # type: ignore[attr-defined]
+        if change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             self._apply_style(bool(value))
             self._update_handle_visibility()
         return super().itemChange(change, value)
@@ -540,11 +560,13 @@ class WorkflowInflectionHandle(QGraphicsEllipseItem):
         self.setBrush(QBrush(connection._selected_color))
         self.setPen(QPen(QColor("#FFFFFF"), 1.2))
         self.setZValue(2)
-        self.setCursor(Qt.OpenHandCursor)  # type: ignore[attr-defined]
-        self.setFlags(
-            QGraphicsItem.ItemIsMovable  # type: ignore[attr-defined]
-            | QGraphicsItem.ItemSendsGeometryChanges  # type: ignore[attr-defined]
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
+        flags = cast(
+            QGraphicsItem.GraphicsItemFlags,
+            QGraphicsItem.GraphicsItemFlag.ItemIsMovable
+            | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges,
         )
+        self.setFlags(flags)
         self.setVisible(False)
 
     def sync_to(self, scene_pos: QPointF):
@@ -554,16 +576,16 @@ class WorkflowInflectionHandle(QGraphicsEllipseItem):
 
     def mousePressEvent(self, event):
         self.connection.setSelected(True)
-        self.setCursor(Qt.ClosedHandCursor)  # type: ignore[attr-defined]
+        self.setCursor(Qt.CursorShape.ClosedHandCursor)
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event):
-        self.setCursor(Qt.OpenHandCursor)  # type: ignore[attr-defined]
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
         super().mouseReleaseEvent(event)
 
     def itemChange(self, change, value):
         if (
-            change == QGraphicsItem.ItemPositionHasChanged  # type: ignore[attr-defined]
+            change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged
             and not self._syncing
         ):
             self.connection.set_inflection_point(

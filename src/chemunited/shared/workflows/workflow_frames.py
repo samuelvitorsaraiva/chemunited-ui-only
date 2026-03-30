@@ -1,37 +1,38 @@
-from chemunited.shared.graph import GraphCore, SceneCore
+from functools import partial
+
+from PyQt5.QtCore import QPointF, QRectF, Qt
+from PyQt5.QtGui import QColor, QPainter, QPen
+from PyQt5.QtWidgets import QFrame, QGraphicsItem, QGraphicsView
+from qfluentwidgets import Action, RoundMenu, isDarkTheme
+
 from chemunited.shared.enums import SetupStepMode, WindowCategory
 from chemunited.shared.enums.protocols_enum import ProtocolBlock
+from chemunited.shared.graph import GraphCore, SceneCore
 from chemunited.shared.icon import OrchestratorIcon
-from chemunited.shared.workflows.process_workflow import ProcessWorkflow
-
-from chemunited.shared.workflows.elements.work_node import WorkflowNode
-from chemunited.shared.workflows.elements.work_connection import WorkflowConnection
 from chemunited.shared.workflows.elements.access_point import WorkflowAccessPoints
-
-from PyQt5.QtWidgets import QFrame, QGraphicsItem, QGraphicsView
-from PyQt5.QtGui import QPainter, QColor, QPen
-from PyQt5.QtCore import QRectF, Qt, QPointF
-from qfluentwidgets import isDarkTheme, RoundMenu, Action
-from functools import partial
+from chemunited.shared.workflows.elements.work_connection import WorkflowConnection
+from chemunited.shared.workflows.elements.work_node import WorkflowNode
+from chemunited.shared.workflows.process_workflow import ProcessWorkflow
 
 
 class WorkflowGraph(GraphCore):
     """
     A graph view for workflows.
     """
+
     WINDOW_CONTAINER: WindowCategory = WindowCategory.SETUP
     MODE: SetupStepMode = SetupStepMode.DESIGN
-    
+
     TERMINAL_NODES = {
         "start": {"block_tag": ProtocolBlock.START, "pos": (200, 300)},
-        "end": {"block_tag": ProtocolBlock.END, "pos": (800, 300)}
+        "end": {"block_tag": ProtocolBlock.END, "pos": (800, 300)},
     }
 
     def __init__(
-        self, 
-        window_container: WindowCategory, 
+        self,
+        window_container: WindowCategory,
         graph: ProcessWorkflow | None = None,
-        parent=None
+        parent=None,
     ):
         super().__init__(parent)
         self.parent_ref = parent
@@ -41,11 +42,11 @@ class WorkflowGraph(GraphCore):
         self.setRenderHint(QPainter.Antialiasing)
         self.setRenderHint(QPainter.SmoothPixmapTransform)
         self.setFrameShape(QFrame.NoFrame)
-        self.setFocusPolicy(Qt.StrongFocus) # type: ignore[attr-defined]
-        
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
         # Make the zoom focus on the mouse pointer!
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
-        
+
         self.graph = graph if graph is not None else ProcessWorkflow()
 
         self._nodes: dict[str, WorkflowNode] = {}
@@ -53,7 +54,9 @@ class WorkflowGraph(GraphCore):
         self._selected_port: WorkflowAccessPoints | None = None
         self.build_from_graph()
 
-    def drawBackground(self, painter: QPainter, rect: QRectF):
+    def drawBackground(self, painter: QPainter | None, rect: QRectF) -> None:
+        if painter is None:
+            return
         background = QColor(39, 39, 39) if isDarkTheme() else QColor(249, 249, 249)
         grid = QColor(255, 255, 255, 18) if isDarkTheme() else QColor(0, 0, 0, 16)
         painter.fillRect(rect, background)
@@ -91,7 +94,7 @@ class WorkflowGraph(GraphCore):
 
     def mousePressEvent(self, event):
         self.setFocus()
-        if event.button() == Qt.LeftButton:  # type: ignore[attr-defined]
+        if event.button() == Qt.MouseButton.LeftButton:
             item = self.itemAt(event.pos())
             access_point = self._resolve_access_point_target(item)
             if access_point is not None:
@@ -106,7 +109,7 @@ class WorkflowGraph(GraphCore):
     def keyPressEvent(self, event):
         if self.window_container != WindowCategory.SETUP:
             return
-        if event.key() == Qt.Key_Delete:  # type: ignore[attr-defined]
+        if event.key() == Qt.Key.Key_Delete:
             if self._delete_selected_items():
                 event.accept()
                 return
@@ -273,7 +276,9 @@ class WorkflowGraph(GraphCore):
             if node_name in self.graph:
                 pos = self.graph.nodes[node_name].get("pos", pos)
             if metadata is None:
-                self.graph.add_block(name=node_name, pos=pos, block_tag=config["block_tag"])
+                self.graph.add_block(
+                    name=node_name, pos=pos, block_tag=config["block_tag"]
+                )
 
     def _delete_selected_items(self) -> bool:
         selected_nodes: set[str] = set()
@@ -337,7 +342,9 @@ class WorkflowGraph(GraphCore):
     ):
         name = self._generate_block_name(block_tag)
         pos = (scene_pos.x(), scene_pos.y())
-        self.graph.add_block(name=name, pos=pos, block_tag=block_tag, ports_numbers=ports_numbers)
+        self.graph.add_block(
+            name=name, pos=pos, block_tag=block_tag, ports_numbers=ports_numbers
+        )
         self._add_node_from_graph(
             name=name,
             block_tag=block_tag,
@@ -374,7 +381,7 @@ class WorkflowGraph(GraphCore):
             return
 
         if self._is_loopback_port(self._selected_port) and self._has_outgoing_loopback(
-            self._selected_port.node.node_name
+            self._selected_port.node.node_name if self._selected_port.node else ""
         ):
             self._clear_selected_port()
             return
@@ -414,6 +421,8 @@ class WorkflowGraph(GraphCore):
     def _has_connection(
         self, start_port: WorkflowAccessPoints, end_port: WorkflowAccessPoints
     ) -> bool:
+        if start_port.node is None or end_port.node is None:
+            return False
         key = (start_port.node.node_name, end_port.node.node_name)
         return key in self._connections
 
@@ -458,7 +467,9 @@ class WorkflowGraph(GraphCore):
         self._connections[key] = connection
         self.scene_attribute.addItem(connection)
         connection.updateConnection()
-        if mirror_graph and not self.graph.has_edge(connection.start_node, connection.end_node):
+        if mirror_graph and not self.graph.has_edge(
+            connection.start_node, connection.end_node
+        ):
             self.graph.add_edge(connection.start_node, connection.end_node, **payload)
         self.sync_connection_inflection_points(connection)
         self._sync_input_ports(connection.end_node)
@@ -546,7 +557,7 @@ class WorkflowGraph(GraphCore):
 
         if node.output_ports:
             return node.output_ports
-        condition = edge_data.get("condition")
+        condition = edge_data.get("condition") is True
         if condition is False and node.top_ports:
             return node.top_ports
         if condition is True and node.bottom_ports:

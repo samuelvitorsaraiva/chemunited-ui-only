@@ -1,16 +1,13 @@
-from chemunited.shared.workflows.workflow_frames import WorkflowGraph
-from chemunited.shared.workflows.process_workflow import ProcessWorkflow
-from chemunited.shared.enums import WindowCategory
-from PyQt5.QtWidgets import (
-    QWidget,
-    QHBoxLayout,
-    QVBoxLayout,
-    QStackedWidget
-)
-from PyQt5.QtGui import QFont
-from PyQt5.QtCore import Qt
-from qfluentwidgets import StrongBodyLabel
 from typing import TYPE_CHECKING
+
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QFont
+from PyQt5.QtWidgets import QHBoxLayout, QStackedWidget, QVBoxLayout, QWidget
+from qfluentwidgets import StrongBodyLabel
+
+from chemunited.shared.enums import WindowCategory
+from chemunited.shared.workflows.process_workflow import ProcessWorkflow
+from chemunited.shared.workflows.workflow_frames import WorkflowGraph
 
 if TYPE_CHECKING:
     from chemunited.ui.GuiSetup import GuiSetup
@@ -18,7 +15,11 @@ if TYPE_CHECKING:
 
 class WorkflowsWidget(QWidget):
 
-    def __init__(self, parent: "GuiSetup | None" = None, window: WindowCategory = WindowCategory.SETUP):
+    def __init__(
+        self,
+        parent: "GuiSetup | None" = None,
+        window: WindowCategory = WindowCategory.SETUP,
+    ):
         super().__init__(parent=parent)
         self._parent = parent
         self._window = window
@@ -75,9 +76,7 @@ class WorkflowsWidget(QWidget):
             self.remove_process(name)
 
         self.workflows[name] = WorkflowGraph(
-            parent=self._parent, 
-            graph=graph,
-            window_container=self._window
+            parent=self._parent, graph=graph, window_container=self._window
         )
         self.stacked_graphs.addWidget(self.workflows[name])
         self.select_process(name)
@@ -85,10 +84,10 @@ class WorkflowsWidget(QWidget):
     def rename_process(self, name: str, new_name: str):
         if name not in self.workflows:
             return
-            
+
         self.workflows[new_name] = self.workflows.pop(name)
         self.workflows[new_name].graph.rename_process(new_name)
-        
+
         # Keep label updated if we just renamed the active screen
         if self.actual_process == name:
             self.actual_process = new_name
@@ -97,14 +96,16 @@ class WorkflowsWidget(QWidget):
     def remove_process(self, name: str):
         if name not in self.workflows:
             return
-            
+
         graph_widget = self.workflows.pop(name)
         self.stacked_graphs.removeWidget(graph_widget)
-        graph_widget.deleteLater() # Completely release PyQt C++ memory
-        
+        graph_widget.deleteLater()  # Completely release PyQt C++ memory
+
         # If we accidentally deleted the active process, fallback to next existing process
         if self.actual_process == name:
-            next_process = next(iter(self.workflows.keys()), None) if self.workflows else None
+            next_process = (
+                next(iter(self.workflows.keys()), None) if self.workflows else None
+            )
             self.select_process(next_process)
 
     def select_process(self, name: str | None):
@@ -117,7 +118,7 @@ class WorkflowsWidget(QWidget):
 
         self.stacked_graphs.setCurrentWidget(self.workflows[name])
         self.stacked_graphs.show()
-        
+
         self.actual_process = name
         self.label_process.setText(name)
 
@@ -135,9 +136,10 @@ class WorkflowsWidget(QWidget):
 
 
 if __name__ == "__main__":
-    """ Example """
-    from PyQt5.QtWidgets import QApplication
+    """Example"""
     import sys
+
+    from PyQt5.QtWidgets import QApplication
 
     app = QApplication(sys.argv)
     graph = ProcessWorkflow()
