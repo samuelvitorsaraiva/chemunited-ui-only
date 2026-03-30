@@ -18,7 +18,7 @@ class WorkflowsWidget(QWidget):
 
     def __init__(
         self,
-        parent: "GuiSetup | None" = None,
+        parent = None,
         window: WindowCategory = WindowCategory.SETUP,
     ):
         super().__init__(parent=parent)
