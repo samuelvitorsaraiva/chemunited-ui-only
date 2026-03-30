@@ -1,4 +1,6 @@
-from PyQt5.QtCore import QRectF, Qt
+from typing import Callable
+
+from PyQt5.QtCore import QPointF, QRectF, Qt
 from PyQt5.QtGui import QColor, QFont, QFontMetrics, QPainterPath, QPen
 from PyQt5.QtSvg import QSvgRenderer
 from PyQt5.QtWidgets import (
@@ -51,6 +53,8 @@ class WorkflowNode(QGraphicsItemGroup):
         title: str,
         subtitle: str = "",
         ports_numbers: int = 1,
+        protected: bool = False,
+        on_position_changed: Callable[["WorkflowNode"], None] | None = None,
     ):
         super().__init__()
         self.node_name = node_name
@@ -58,10 +62,13 @@ class WorkflowNode(QGraphicsItemGroup):
         self.title = title
         self.subtitle = subtitle
         self.ports_numbers = max(1, ports_numbers)
+        self.protected = protected
         self.shadow_effect: QGraphicsDropShadowEffect | None = None
         self._body_width = 0
         self._body_height = 0
         self.block_icon = self._icon_for_block()
+        self._on_position_changed = on_position_changed
+        self._suspend_position_callback = False
 
         self.setFlags(
             QGraphicsItemGroup.ItemIsMovable  # type: ignore[attr-defined]
@@ -287,9 +294,20 @@ class WorkflowNode(QGraphicsItemGroup):
         self.input_ports.set_count(count)
         self._layout_ports()
 
+    def sync_position(self, pos: tuple[float, float]) -> None:
+        self._suspend_position_callback = True
+        try:
+            self.setPos(QPointF(*pos))
+        finally:
+            self._suspend_position_callback = False
+
     @property
     def is_terminal(self) -> bool:
         return self.block_tag in {ProtocolBlock.START, ProtocolBlock.END}
+
+    @property
+    def is_protected(self) -> bool:
+        return self.protected
 
     def start_progress(self):
         if self.progress_bar is None or self.progress_proxy is None:
@@ -304,16 +322,13 @@ class WorkflowNode(QGraphicsItemGroup):
         self.progress_proxy.setVisible(False)
 
     def itemChange(self, change, value):
-        if change == QGraphicsItemGroup.ItemSelectedHasChanged:  # type: ignore[attr-defined]
+        if change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             self._apply_body_style(bool(value))
         if (
-            change == QGraphicsItemGroup.ItemPositionHasChanged  # type: ignore[attr-defined]
-            and self.scene()
-            and self.scene().views()
+            change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged
+            and self.scene() is not None
+            and not self._suspend_position_callback
+            and self._on_position_changed is not None
         ):
-            view = self.scene().views()[0]
-            if hasattr(view, "update_connections"):
-                view.update_connections()
-            if hasattr(view, "sync_node_position"):
-                view.sync_node_position(self)
+            self._on_position_changed(self)
         return super().itemChange(change, value)

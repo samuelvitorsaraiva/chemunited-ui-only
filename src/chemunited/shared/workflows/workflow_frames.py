@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from functools import partial
 
 from PyQt5.QtCore import QPointF, QRectF, Qt
@@ -9,10 +11,14 @@ from chemunited.shared.enums import SetupStepMode, WindowCategory
 from chemunited.shared.enums.protocols_enum import ProtocolBlock
 from chemunited.shared.graph import GraphCore, SceneCore
 from chemunited.shared.icon import OrchestratorIcon
-from chemunited.shared.workflows.elements.access_point import WorkflowAccessPoints
-from chemunited.shared.workflows.elements.work_connection import WorkflowConnection
-from chemunited.shared.workflows.elements.work_node import WorkflowNode
-from chemunited.shared.workflows.process_workflow import ProcessWorkflow
+from chemunited.shared.workflows.controller import WorkflowController
+from chemunited.shared.workflows.exceptions import WorkflowRuleViolation
+from chemunited.shared.workflows.process_workflow import BlockData, ConnectionData
+from chemunited.shared.workflows.workflow_rules import resolve_render_start_role
+
+from .elements.access_point import WorkflowAccessPoints
+from .elements.work_connection import WorkflowConnection
+from .elements.work_node import WorkflowNode
 
 
 class WorkflowGraph(GraphCore):
@@ -23,20 +29,18 @@ class WorkflowGraph(GraphCore):
     WINDOW_CONTAINER: WindowCategory = WindowCategory.SETUP
     MODE: SetupStepMode = SetupStepMode.DESIGN
 
-    TERMINAL_NODES = {
-        "start": {"block_tag": ProtocolBlock.START, "pos": (200, 300)},
-        "end": {"block_tag": ProtocolBlock.END, "pos": (800, 300)},
-    }
-
     def __init__(
         self,
         window_container: WindowCategory,
-        graph: ProcessWorkflow | None = None,
+        controller: WorkflowController | None = None,
         parent=None,
     ):
-        super().__init__(parent)
+        super().__init__(parent=parent)
         self.parent_ref = parent
         self.window_container = window_container
+        self.controller = (
+            controller if controller is not None else WorkflowController(parent=self)
+        )
         self.scene_attribute = SceneCore(self)
         self.setScene(self.scene_attribute)
         self.setRenderHint(QPainter.Antialiasing)
@@ -44,15 +48,27 @@ class WorkflowGraph(GraphCore):
         self.setFrameShape(QFrame.NoFrame)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
-        # Make the zoom focus on the mouse pointer!
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
-
-        self.graph = graph if graph is not None else ProcessWorkflow()
 
         self._nodes: dict[str, WorkflowNode] = {}
         self._connections: dict[tuple[str, str], WorkflowConnection] = {}
         self._selected_port: WorkflowAccessPoints | None = None
-        self.build_from_graph()
+
+        self._bind_controller()
+        self.build_from_model()
+
+    @property
+    def model(self):
+        return self.controller.model
+
+    def _bind_controller(self):
+        self.controller.model_reset.connect(self.build_from_model)
+        self.controller.block_added.connect(self._on_block_added)
+        self.controller.block_updated.connect(self._on_block_updated)
+        self.controller.block_removed.connect(self._on_block_removed)
+        self.controller.connection_added.connect(self._on_connection_added)
+        self.controller.connection_updated.connect(self._on_connection_updated)
+        self.controller.connection_removed.connect(self._on_connection_removed)
 
     def drawBackground(self, painter: QPainter | None, rect: QRectF) -> None:
         if painter is None:
@@ -166,7 +182,7 @@ class WorkflowGraph(GraphCore):
         delete_action = Action(self)
         delete_action.setText("Delete block")
         delete_action.setIcon(OrchestratorIcon.TRASH.icon())
-        delete_action.setEnabled(not node.is_terminal)
+        delete_action.setEnabled(not node.is_protected)
         delete_action.triggered.connect(partial(self.remove_node, node.node_name))
         menu.addAction(delete_action)
 
@@ -227,31 +243,17 @@ class WorkflowGraph(GraphCore):
             current_item = current_item.parentItem()
         return None
 
-    def build_from_graph(self):
-        self._ensure_terminal_nodes()
+    def build_from_model(self):
         self._clear_scene_objects()
 
-        for name, metadata in self.graph.iter_metadata():
-            self._add_node_from_graph(
-                name=name,
-                block_tag=metadata.block_tag,
-                pos=metadata.pos,
-                ports_numbers=metadata.ports_numbers,
-            )
+        for _, block in self.controller.iter_blocks():
+            self._add_node_from_block(block)
 
-        for start, end, data in self.graph.edges(data=True):
-            start_port = self._resolve_start_port(self._nodes.get(start), data)
-            end_node = self._nodes.get(end)
-            end_port = end_node.input_ports if end_node else None
-            if start_port and end_port:
-                self._create_connection(
-                    start_port,
-                    end_port,
-                    mirror_graph=False,
-                    edge_data=dict(data),
-                    inflection_points=data.get("inflection_points"),
-                    bend_point=data.get("bend_point"),
-                )
+        for start, end, connection in self.controller.iter_connections():
+            self._add_connection_from_model(start, end, connection)
+
+        for node_name in self._nodes:
+            self._sync_input_ports(node_name)
 
     def _clear_scene_objects(self):
         self.scene_attribute.clear()
@@ -269,16 +271,66 @@ class WorkflowGraph(GraphCore):
         }
         return labels[block_tag]
 
-    def _ensure_terminal_nodes(self):
-        for node_name, config in self.TERMINAL_NODES.items():
-            metadata = self.graph.get_metadata(node_name)
-            pos = config["pos"]
-            if node_name in self.graph:
-                pos = self.graph.nodes[node_name].get("pos", pos)
-            if metadata is None:
-                self.graph.add_block(
-                    name=node_name, pos=pos, block_tag=config["block_tag"]
-                )
+    def _add_node_from_block(self, block: BlockData) -> WorkflowNode:
+        title, subtitle = self._display_text(block.name, block.block_tag)
+        node = WorkflowNode(
+            node_name=block.name,
+            block_tag=block.block_tag,
+            title=title,
+            subtitle=subtitle,
+            ports_numbers=block.ports_numbers,
+            protected=block.protected,
+            on_position_changed=self._on_node_moved,
+        )
+        node.sync_position(block.pos)
+        self.scene_attribute.addItem(node)
+        self._nodes[block.name] = node
+        return node
+
+    def _resolve_start_port(
+        self,
+        node: WorkflowNode | None,
+        connection: ConnectionData,
+    ) -> WorkflowAccessPoints | None:
+        if node is None:
+            return None
+
+        start_role = resolve_render_start_role(
+            node.block_tag,
+            start_role=connection.start_role,
+            loopback=connection.loopback,
+            trigger_on=connection.trigger_on,
+            condition=connection.condition,
+        )
+        if start_role == "top":
+            return node.top_ports
+        if start_role == "bottom":
+            return node.bottom_ports
+        return node.output_ports
+
+    def _add_connection_from_model(
+        self, start: str, end: str, connection_data: ConnectionData
+    ) -> WorkflowConnection | None:
+        start_node = self._nodes.get(start)
+        end_node = self._nodes.get(end)
+        if start_node is None or end_node is None or end_node.input_ports is None:
+            return None
+
+        start_port = self._resolve_start_port(start_node, connection_data)
+        if start_port is None:
+            return None
+
+        connection = WorkflowConnection(
+            start_port,
+            end_node.input_ports,
+            inflection_points=connection_data.inflection_points,
+            edge_data=connection_data.to_attrs(),
+            on_geometry_changed=self._on_connection_geometry_changed,
+        )
+        self._connections[(start, end)] = connection
+        self.scene_attribute.addItem(connection)
+        connection.updateConnection()
+        return connection
 
     def _delete_selected_items(self) -> bool:
         selected_nodes: set[str] = set()
@@ -294,45 +346,20 @@ class WorkflowGraph(GraphCore):
         if not selected_nodes and not selected_connections:
             return False
 
+        deleted_any = False
         for start_node, end_node in selected_connections:
-            self.remove_connection(start_node, end_node)
+            if self.controller.has_connection(start_node, end_node):
+                self.controller.remove_connection(start_node, end_node)
+                deleted_any = True
 
         for node_name in selected_nodes:
-            self.remove_node(node_name)
+            try:
+                self.controller.remove_block(node_name)
+            except WorkflowRuleViolation:
+                continue
+            deleted_any = True
 
-        return True
-
-    def _generate_block_name(self, block_tag: ProtocolBlock) -> str:
-        prefix = {
-            ProtocolBlock.SCRIPT: "script",
-            ProtocolBlock.LOOP: "loop",
-            ProtocolBlock.IF: "conditional",
-        }[block_tag]
-        index = 1
-        while f"{prefix}_{index}" in self.graph:
-            index += 1
-        return f"{prefix}_{index}"
-
-    def _add_node_from_graph(
-        self,
-        name: str,
-        block_tag: ProtocolBlock,
-        pos: tuple[int, int] | tuple[float, float],
-        ports_numbers: int = 1,
-    ) -> WorkflowNode:
-        title, subtitle = self._display_text(name, block_tag)
-        node = WorkflowNode(
-            node_name=name,
-            block_tag=block_tag,
-            title=title,
-            subtitle=subtitle,
-            ports_numbers=ports_numbers,
-        )
-        node.setPos(QPointF(*pos))
-        self.scene_attribute.addItem(node)
-        self._nodes[name] = node
-        self._sync_input_ports(name)
-        return node
+        return deleted_any
 
     def add_block(
         self,
@@ -340,15 +367,9 @@ class WorkflowGraph(GraphCore):
         scene_pos: QPointF,
         ports_numbers: int = 1,
     ):
-        name = self._generate_block_name(block_tag)
-        pos = (scene_pos.x(), scene_pos.y())
-        self.graph.add_block(
-            name=name, pos=pos, block_tag=block_tag, ports_numbers=ports_numbers
-        )
-        self._add_node_from_graph(
-            name=name,
+        self.controller.add_block(
             block_tag=block_tag,
-            pos=pos,
+            pos=(scene_pos.x(), scene_pos.y()),
             ports_numbers=ports_numbers,
         )
 
@@ -372,22 +393,22 @@ class WorkflowGraph(GraphCore):
             self._clear_selected_port()
             return
 
-        if self._selected_port.node is port.node:
+        start_node = self._selected_port.node
+        end_node = port.node
+        if start_node is None or end_node is None:
             self._clear_selected_port()
             return
 
-        if self._has_connection(self._selected_port, port):
+        try:
+            self.controller.connect_nodes(
+                start_name=start_node.node_name,
+                end_name=end_node.node_name,
+                start_role=self._selected_port.role,
+            )
+        except WorkflowRuleViolation:
+            pass
+        finally:
             self._clear_selected_port()
-            return
-
-        if self._is_loopback_port(self._selected_port) and self._has_outgoing_loopback(
-            self._selected_port.node.node_name if self._selected_port.node else ""
-        ):
-            self._clear_selected_port()
-            return
-
-        self._create_connection(self._selected_port, port, mirror_graph=True)
-        self._clear_selected_port()
 
     def _set_selected_port(self, port: WorkflowAccessPoints):
         if self.window_container != WindowCategory.SETUP:
@@ -402,190 +423,104 @@ class WorkflowGraph(GraphCore):
             self._selected_port.set_selected(False)
         self._selected_port = None
 
-    def _is_loopback_port(self, port: WorkflowAccessPoints) -> bool:
-        node = port.node
-        return (
-            node is not None
-            and node.block_tag == ProtocolBlock.LOOP
-            and port.role in {"top", "bottom"}
-        )
-
-    def _has_outgoing_loopback(self, node_name: str) -> bool:
-        if node_name not in self.graph:
-            return False
-        return any(
-            data.get("loopback") is True
-            for _, _, data in self.graph.out_edges(node_name, data=True)
-        )
-
-    def _has_connection(
-        self, start_port: WorkflowAccessPoints, end_port: WorkflowAccessPoints
-    ) -> bool:
-        if start_port.node is None or end_port.node is None:
-            return False
-        key = (start_port.node.node_name, end_port.node.node_name)
-        return key in self._connections
-
-    def _edge_metadata_for_port(
-        self, start_port: WorkflowAccessPoints
-    ) -> dict[str, object]:
-        metadata: dict[str, object] = {"start_role": start_port.role}
-        node = start_port.node
-        block_tag = node.block_tag if node else None
-
-        if block_tag == ProtocolBlock.LOOP and start_port.role in {"top", "bottom"}:
-            metadata["loopback"] = True
-            metadata["trigger_on"] = False
-            return metadata
-
-        if block_tag == ProtocolBlock.IF:
-            metadata["condition"] = start_port.role != "top"
-            return metadata
-
-        metadata["condition"] = True
-        return metadata
-
-    def _create_connection(
-        self,
-        start_port: WorkflowAccessPoints,
-        end_port: WorkflowAccessPoints,
-        mirror_graph: bool,
-        edge_data: dict[str, object] | None = None,
-        inflection_points: list[tuple[float, float] | QPointF] | None = None,
-        bend_point: tuple[float, float] | QPointF | None = None,
-    ) -> WorkflowConnection:
-        payload = dict(edge_data or self._edge_metadata_for_port(start_port))
-        payload.setdefault("start_role", start_port.role)
-        connection = WorkflowConnection(
-            start_port,
-            end_port,
-            inflection_points=inflection_points,
-            bend_point=bend_point,
-            edge_data=payload,
-        )
-        key = (connection.start_node, connection.end_node)
-        self._connections[key] = connection
-        self.scene_attribute.addItem(connection)
-        connection.updateConnection()
-        if mirror_graph and not self.graph.has_edge(
-            connection.start_node, connection.end_node
-        ):
-            self.graph.add_edge(connection.start_node, connection.end_node, **payload)
-        self.sync_connection_inflection_points(connection)
-        self._sync_input_ports(connection.end_node)
-        return connection
-
-    def _incoming_edge_count(self, node_name: str) -> int:
-        if node_name not in self.graph:
-            return 0
-        return sum(
-            1
-            for _, _, data in self.graph.in_edges(node_name, data=True)
-            if data.get("loopback") is not True
-        )
-
     def _sync_input_ports(self, node_name: str):
         node = self._nodes.get(node_name)
         if node is None:
             return
-        node.set_input_port_count(max(1, self._incoming_edge_count(node_name)))
+        node.set_input_port_count(self.controller.incoming_port_count(node_name))
+
+    def _on_node_moved(self, node: WorkflowNode):
+        self.update_connections()
+        self.controller.move_block(
+            node.node_name,
+            (node.pos().x(), node.pos().y()),
+        )
+
+    def _on_connection_geometry_changed(self, connection: WorkflowConnection):
+        self.controller.update_connection_geometry(
+            connection.start_node,
+            connection.end_node,
+            [
+                (point.x(), point.y())
+                for point in connection.inflection_points
+            ],
+        )
+
+    def _on_block_added(self, name: str):
+        block = self.controller.get_block(name)
+        if block is None or name in self._nodes:
+            return
+        self._add_node_from_block(block)
+        self._sync_input_ports(name)
+
+    def _on_block_updated(self, name: str):
+        block = self.controller.get_block(name)
+        if block is None:
+            return
+
+        node = self._nodes.get(name)
+        if node is None:
+            self._add_node_from_block(block)
+            self._sync_input_ports(name)
+            self.update_connections()
+            return
+
+        node.protected = block.protected
+        if (node.pos().x(), node.pos().y()) != block.pos:
+            node.sync_position(block.pos)
+        self._sync_input_ports(name)
         self.update_connections()
 
-    def remove_connection(self, start_node: str, end_node: str):
-        connection = self._connections.pop((start_node, end_node), None)
-        if connection is None:
-            return
-
-        self.scene_attribute.removeItem(connection)
-        if self.graph.has_edge(start_node, end_node):
-            self.graph.remove_edge(start_node, end_node)
-        self._sync_input_ports(end_node)
-
-    def remove_node(self, node_name: str):
-        node = self._nodes.get(node_name)
+    def _on_block_removed(self, name: str):
+        node = self._nodes.pop(name, None)
         if node is None:
-            return
-
-        if node.is_terminal:
             return
 
         if self._selected_port and self._selected_port.node is node:
             self._clear_selected_port()
-
-        attached_connections = [
-            key for key in list(self._connections) if node_name in key
-        ]
-        for start_node, end_node in attached_connections:
-            self.remove_connection(start_node, end_node)
-
         self.scene_attribute.removeItem(node)
-        del self._nodes[node_name]
 
-        if node_name in self.graph:
-            self.graph.remove_node(node_name)
-
-    def _resolve_start_port(
-        self,
-        node: WorkflowNode | None,
-        edge_data: dict,
-    ) -> WorkflowAccessPoints | None:
-        if node is None:
-            return None
-        start_role = edge_data.get("start_role")
-        if start_role == "top":
-            return node.top_ports
-        if start_role == "bottom":
-            return node.bottom_ports
-        if start_role == "right" and node.output_ports:
-            return node.output_ports
-
-        if edge_data.get("loopback") is True:
-            trigger_on = bool(edge_data.get("trigger_on", False))
-            if trigger_on and node.top_ports:
-                return node.top_ports
-            if not trigger_on and node.bottom_ports:
-                return node.bottom_ports
-            return node.top_ports or node.bottom_ports or node.output_ports
-
-        if node.block_tag == ProtocolBlock.IF:
-            condition = bool(edge_data.get("condition", True))
-            if not condition and node.top_ports:
-                return node.top_ports
-            if condition and node.bottom_ports:
-                return node.bottom_ports
-            return node.top_ports or node.bottom_ports or node.output_ports
-
-        if node.output_ports:
-            return node.output_ports
-        condition = edge_data.get("condition") is True
-        if condition is False and node.top_ports:
-            return node.top_ports
-        if condition is True and node.bottom_ports:
-            return node.bottom_ports
-        return node.top_ports or node.bottom_ports
-
-    def sync_node_position(self, node: WorkflowNode):
-        self.graph.update_attribute(
-            node.node_name,
-            "pos",
-            (node.pos().x(), node.pos().y()),
-        )
-
-    def sync_connection_inflection_points(self, connection: WorkflowConnection):
-        if not self.graph.has_edge(connection.start_node, connection.end_node):
+    def _on_connection_added(self, start: str, end: str):
+        if (start, end) in self._connections:
             return
-        edge_data = self.graph.edges[connection.start_node, connection.end_node]
-        edge_data.pop("bend_point", None)
-        if not connection.inflection_points:
-            edge_data.pop("inflection_points", None)
+        connection = self.controller.get_connection(start, end)
+        if connection is None:
             return
-        edge_data["inflection_points"] = [
-            (point.x(), point.y()) for point in connection.inflection_points
-        ]
+        self._add_connection_from_model(start, end, connection)
+        self._sync_input_ports(end)
+
+    def _on_connection_updated(self, start: str, end: str):
+        connection_data = self.controller.get_connection(start, end)
+        if connection_data is None:
+            return
+
+        connection = self._connections.get((start, end))
+        if connection is None:
+            self._add_connection_from_model(start, end, connection_data)
+        else:
+            connection.sync_from_model(connection_data.to_attrs())
+        self._sync_input_ports(end)
+        self.update_connections()
+
+    def _on_connection_removed(self, start: str, end: str):
+        connection = self._connections.pop((start, end), None)
+        if connection is None:
+            return
+        self.scene_attribute.removeItem(connection)
+        self._sync_input_ports(end)
 
     def update_connections(self):
         for connection in self._connections.values():
             connection.updateConnection()
+
+    def remove_connection(self, start_node: str, end_node: str):
+        self.controller.remove_connection(start_node, end_node)
+
+    def remove_node(self, node_name: str):
+        try:
+            self.controller.remove_block(node_name)
+        except WorkflowRuleViolation:
+            return
 
     def start_progress(self, node_name: str):
         node = self._nodes.get(node_name)
@@ -605,5 +540,4 @@ class WorkflowGraph(GraphCore):
 
     def clear_workflow(self):
         self._clear_selected_port()
-        self.graph.clear()
-        self.build_from_graph()
+        self.controller.clear_workflow()

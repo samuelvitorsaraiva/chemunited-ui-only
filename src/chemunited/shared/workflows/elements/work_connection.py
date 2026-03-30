@@ -1,7 +1,7 @@
 import math
 from collections.abc import Sequence
 from enum import Enum
-from typing import TypedDict, cast
+from typing import Callable, TypedDict, cast
 
 from PyQt5.QtCore import QPointF, Qt
 from PyQt5.QtGui import QBrush, QColor, QFont, QPainterPath, QPen
@@ -44,11 +44,13 @@ class WorkflowConnection(QGraphicsPathItem):
         inflection_points: list[tuple[float, float] | QPointF] | None = None,
         bend_point: tuple[float, float] | QPointF | None = None,
         edge_data: dict | None = None,
+        on_geometry_changed: Callable[["WorkflowConnection"], None] | None = None,
     ):
         super().__init__()
         self.start_item = start_item
         self.end_item = end_item
         self.edge_data = dict(edge_data or {})
+        self._on_geometry_changed = on_geometry_changed
         self.config: ConnectionConfig = {
             "start": self._curve_position(start_item.role),
             "end": CurveAttachedPosition.LEFT,
@@ -481,6 +483,19 @@ class WorkflowConnection(QGraphicsPathItem):
                 and (is_primary or index < len(self.inflection_points))
             )
 
+    def sync_from_model(self, edge_data: dict[str, object]):
+        self.edge_data = dict(edge_data)
+        self.start_role = str(self.edge_data.get("start_role", self.start_role))
+        inflection_points = cast(
+            Sequence[tuple[float, float] | QPointF] | None,
+            edge_data.get("inflection_points"),
+        )
+        self.set_inflection_points(
+            inflection_points,
+            persist=False,
+        )
+        self._apply_style(self.isSelected())
+
     def set_inflection_points(
         self,
         points: Sequence[tuple[float, float] | QPointF] | None,
@@ -491,12 +506,8 @@ class WorkflowConnection(QGraphicsPathItem):
             bend_point=None,
         )
         self.updateConnection()
-        scene = self.scene()
-        if not persist or scene is None:
-            return
-        views = scene.views()
-        if views and hasattr(views[0], "sync_connection_inflection_points"):
-            views[0].sync_connection_inflection_points(self)
+        if persist and self._on_geometry_changed is not None:
+            self._on_geometry_changed(self)
 
     def set_inflection_point(
         self,

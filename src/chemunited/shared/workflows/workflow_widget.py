@@ -6,6 +6,7 @@ from PyQt5.QtWidgets import QHBoxLayout, QStackedWidget, QVBoxLayout, QWidget
 from qfluentwidgets import StrongBodyLabel
 
 from chemunited.shared.enums import WindowCategory
+from chemunited.shared.workflows.controller import WorkflowController
 from chemunited.shared.workflows.process_workflow import ProcessWorkflow
 from chemunited.shared.workflows.workflow_frames import WorkflowGraph
 
@@ -24,6 +25,7 @@ class WorkflowsWidget(QWidget):
         self._parent = parent
         self._window = window
         self.workflows: dict[str, WorkflowGraph] = {}
+        self.controllers: dict[str, WorkflowController] = {}
         self.actual_process: str = ""
         self.label_process = StrongBodyLabel(text="")
         self.__build_ui()
@@ -38,6 +40,7 @@ class WorkflowsWidget(QWidget):
             self.stacked_graphs.removeWidget(item)
             item.deleteLater()
         self.workflows.clear()
+        self.controllers.clear()
         self.select_process(None)
 
     def recenter_view(self):
@@ -75,8 +78,12 @@ class WorkflowsWidget(QWidget):
         if name in self.workflows:
             self.remove_process(name)
 
+        controller = WorkflowController(workflow=graph, parent=self)
+        self.controllers[name] = controller
         self.workflows[name] = WorkflowGraph(
-            parent=self._parent, graph=graph, window_container=self._window
+            parent=self._parent,
+            controller=controller,
+            window_container=self._window,
         )
         self.stacked_graphs.addWidget(self.workflows[name])
         self.select_process(name)
@@ -86,7 +93,8 @@ class WorkflowsWidget(QWidget):
             return
 
         self.workflows[new_name] = self.workflows.pop(name)
-        self.workflows[new_name].graph.rename_process(new_name)
+        self.controllers[new_name] = self.controllers.pop(name)
+        self.controllers[new_name].rename_process(new_name)
 
         # Keep label updated if we just renamed the active screen
         if self.actual_process == name:
@@ -98,6 +106,7 @@ class WorkflowsWidget(QWidget):
             return
 
         graph_widget = self.workflows.pop(name)
+        self.controllers.pop(name, None)
         self.stacked_graphs.removeWidget(graph_widget)
         graph_widget.deleteLater()  # Completely release PyQt C++ memory
 
@@ -124,10 +133,11 @@ class WorkflowsWidget(QWidget):
 
     def closeEvent(self, event):
         if self._parent is None:
-            for process_name, workflow in self.workflows.items():
-                print(f"ProcessWorkflow[{process_name}]: {workflow.graph}")
-                print(f"  nodes={list(workflow.graph.nodes(data=True))}")
-                print(f"  edges={list(workflow.graph.edges(data=True))}")
+            for process_name, controller in self.controllers.items():
+                topology = controller.model.as_networkx()
+                print(f"ProcessWorkflow[{process_name}]: {topology}")
+                print(f"  nodes={list(topology.nodes(data=True))}")
+                print(f"  edges={list(topology.edges(data=True))}")
         super().closeEvent(event)
 
     def clear_progress(self):
