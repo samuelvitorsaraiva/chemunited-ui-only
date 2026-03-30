@@ -38,10 +38,13 @@ class BaseFieldCard(CardWidget):
         layout.addLayout(title_row)
 
         # 2. description (hidden when empty)
+        # addWidget first so the label has a parent before setVisible(True) is
+        # called — a parentless widget shown via setVisible(True) briefly becomes
+        # a top-level HWND on Windows, causing a visible flash.
         desc = self._field_info.description or ""
         self._desc_label = CaptionLabel(desc)
-        self._desc_label.setVisible(bool(desc))
         layout.addWidget(self._desc_label)
+        self._desc_label.setVisible(bool(desc))
 
         # 3. input widget filled in by subclass
         self._input_widget = self._build_input()
