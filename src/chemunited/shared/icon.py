@@ -61,9 +61,9 @@ class OrchestratorIcon(FluentIconBase, Enum):
     WATER = "water"
 
     def path(self, theme=Theme.AUTO):
-        resource_path = f":/icons/{self.value}_{getIconColor()}.svg"
+        resource_path = f":/icons/icons/{self.value}_{getIconColor()}.svg"
         if QFile.exists(resource_path):
             return resource_path
         else:
             # The icon has not theme-switch
-            return f":/icons/{self.value}.svg"
+            return f":/icons/icons/{self.value}.svg"
