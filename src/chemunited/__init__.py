@@ -1,0 +1,1 @@
+from .shared.resources.resources_rc import *
