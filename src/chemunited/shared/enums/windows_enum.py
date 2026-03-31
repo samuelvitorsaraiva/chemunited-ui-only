@@ -12,3 +12,5 @@ class SetupStepMode(Enum):
     DESIGN = auto()
     DETAIL = auto()
     EXECUTION = auto()
+    PROTOCOLS = auto()
+    CONNECTIVITY = auto()

@@ -42,7 +42,7 @@ class ProcessParameters(BaseModel):
         title="Experiment name",
         description="Human-readable label for this run.",
         min_length=3,
-        max_length=64,
+        max_length=12,
         json_schema_extra={"group": "Identification"},
     )]
 

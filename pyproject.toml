@@ -73,6 +73,8 @@ pretty = true
 show_error_codes = true
 warn_redundant_casts = true
 warn_unused_ignores = false
+explicit_package_bases = true
+mypy_path = "$MYPY_CONFIG_FILE_DIR/src,$MYPY_CONFIG_FILE_DIR/../chemunited-core/src"
 
 [[tool.mypy.overrides]]
 module = [
@@ -83,3 +85,17 @@ module = [
     "chemunited.ui.*",
 ]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "pydantic_pint",
+    "pydantic_pint.*",
+]
+follow_untyped_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "chemunited_core",
+    "chemunited_core.*",
+]
+follow_imports = "silent"
